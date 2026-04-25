@@ -1,11 +1,12 @@
 # GitHub Profile Counter API Documentation
 
-A Cloudflare Workers-based service to track profile and website view counts with badge generation.
+A Cloudflare Workers-based service to track profile, website, and repository hit counts with badge generation.
 
 ## Features
 
 - 🎯 Profile view counter with auto-increment
 - 🌐 Website view counter with auto-increment
+- 📦 Repository hit counter with auto-increment
 - 🏷️ Dynamic SVG badge generation with multiple styles
 - 📊 Read-only analytics endpoints
 - 🛡️ Conservative rate limiting (30-300 req/hour per IP)
@@ -72,6 +73,67 @@ curl http://localhost:8788/badge/torvalds?style=for-the-badge&color=orange
 ```markdown
 ![Profile Views](https://your-worker.your-subdomain.workers.dev/badge/yourusername)
 ![Profile Views](https://your-worker.your-subdomain.workers.dev/badge/yourusername?style=flat-square&color=blue)
+```
+
+---
+
+### 2.1 Website Badge Endpoint (Auto-increment)
+
+**GET /badge/website/:domain**
+
+Generate an SVG badge showing website hit count. Increments on each call.
+
+**Parameters:**
+- `domain` (path) - Domain name (e.g., `example.com`)
+
+**Query Parameters:**
+- `style` (optional) - Badge style: `flat` (default), `flat-square`, `for-the-badge`
+- `color` (optional) - Badge color: `brightgreen` (default), `green`, `blue`, `red`, `orange`, `yellow`, `grey`
+
+**Rate Limit:** 300 requests/hour per IP
+
+**Examples:**
+
+```bash
+curl http://localhost:8788/badge/website/example.com
+curl http://localhost:8788/badge/website/example.com?style=flat-square&color=blue
+```
+
+**Markdown Usage:**
+
+```markdown
+![Website Hits](https://your-worker.your-subdomain.workers.dev/badge/website/example.com)
+```
+
+---
+
+### 2.2 Repository Badge Endpoint (Auto-increment)
+
+**GET /badge/repo/:owner/:repo**
+
+Generate an SVG badge showing repository hit count. Increments on each call.
+
+**Parameters:**
+- `owner` (path) - GitHub owner/user name
+- `repo` (path) - Repository name
+
+**Query Parameters:**
+- `style` (optional) - Badge style: `flat` (default), `flat-square`, `for-the-badge`
+- `color` (optional) - Badge color: `brightgreen` (default), `green`, `blue`, `red`, `orange`, `yellow`, `grey`
+
+**Rate Limit:** 300 requests/hour per IP
+
+**Examples:**
+
+```bash
+curl http://localhost:8788/badge/repo/octocat/hello-world
+curl http://localhost:8788/badge/repo/octocat/hello-world?style=for-the-badge&color=orange
+```
+
+**Markdown Usage:**
+
+```markdown
+![Repo Hits](https://your-worker.your-subdomain.workers.dev/badge/repo/octocat/hello-world)
 ```
 
 ---
@@ -159,7 +221,40 @@ curl http://localhost:8788/website/example.com
 
 ---
 
-### 5. Profile Stats Endpoint (Read-only)
+### 5. Repository Hits Endpoint (Auto-increment)
+
+**GET /repo/:owner/:repo**
+
+Get repository hit count as JSON. Increments on each call.
+
+**Parameters:**
+- `owner` (path) - GitHub owner/user name
+- `repo` (path) - Repository name
+
+**Rate Limit:** 30 requests/hour per IP
+
+**Example:**
+
+```bash
+curl http://localhost:8788/repo/octocat/hello-world
+```
+
+**Success Response (200):**
+
+```json
+{
+  "count": 7,
+  "owner": "octocat",
+  "repo": "hello-world",
+  "repository": "octocat/hello-world"
+}
+```
+
+**Error Responses:** Same structure as profile count endpoint
+
+---
+
+### 6. Profile Stats Endpoint (Read-only)
 
 **GET /stats/:profile**
 
@@ -190,7 +285,7 @@ curl http://localhost:8788/stats/octocat
 
 ---
 
-### 6. Website Stats Endpoint (Read-only)
+### 7. Website Stats Endpoint (Read-only)
 
 **GET /stats/website/:domain**
 
@@ -213,6 +308,38 @@ curl http://localhost:8788/stats/website/example.com
 {
   "count": 1337,
   "domain": "example.com",
+  "incremented": false
+}
+```
+
+---
+
+### 8. Repository Stats Endpoint (Read-only)
+
+**GET /stats/repo/:owner/:repo**
+
+Get repository hit count WITHOUT incrementing.
+
+**Parameters:**
+- `owner` (path) - GitHub owner/user name
+- `repo` (path) - Repository name
+
+**Rate Limit:** 1000 requests/hour per IP
+
+**Example:**
+
+```bash
+curl http://localhost:8788/stats/repo/octocat/hello-world
+```
+
+**Success Response (200):**
+
+```json
+{
+  "count": 7,
+  "owner": "octocat",
+  "repo": "hello-world",
+  "repository": "octocat/hello-world",
   "incremented": false
 }
 ```
@@ -250,6 +377,13 @@ Rate limits reset every hour based on UTC time.
 - Each label: alphanumeric and hyphens only
 - Pattern: `^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$`
 
+### Repository Identifiers
+- Owner follows profile name rules
+- Repository name is required
+- Repository name maximum 100 characters
+- Repository can contain alphanumeric characters, hyphens (`-`), underscores (`_`), and dots (`.`)
+- Pattern: `^[a-zA-Z0-9._-]+$`
+
 ---
 
 ## Error Handling
@@ -275,7 +409,7 @@ All endpoints support CORS with:
 
 ## Caching Strategy
 
-- **Increment endpoints** (badge, count, website): `no-cache, no-store, must-revalidate` for real-time counts
+- **Increment endpoints** (all badge endpoints, count, website, repo): `no-cache, no-store, must-revalidate` for real-time counts
 - **Stats endpoints**: `public, max-age=60` for 60-second cache
 
 This ensures badges and counters always show current values.
@@ -306,6 +440,7 @@ Data is stored in Cloudflare Workers KV with keys:
 
 - Profile views: `profile:{username}`
 - Website views: `website:{domain}`
+- Repository hits: `repo:{owner}/{repo}`
 - Rate limits: `ratelimit:{ip}:{endpoint}:{hour}`
 
 Rate limit keys expire after 2 hours automatically.

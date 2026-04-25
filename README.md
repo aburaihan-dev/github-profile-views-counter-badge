@@ -1,11 +1,12 @@
 # GitHub Profile Counter
 
-A Cloudflare Workers-based service to track profile and website view counts with dynamic SVG badge generation.
+A Cloudflare Workers-based service to track profile, website, and repository counts with dynamic SVG badge generation.
 
 ## Features
 
 - 🎯 **Profile View Counter** - Track views per GitHub profile with auto-increment
 - 🌐 **Website View Counter** - Track website visits with auto-increment
+- 📦 **Repository Hit Counter** - Track hits per GitHub repository with auto-increment
 - 🏷️ **Dynamic SVG Badges** - Generate beautiful badges with multiple styles and colors
 - 📊 **Analytics Endpoints** - Read-only stats without incrementing counters
 - 🛡️ **Rate Limiting** - Conservative limits (30-1000 req/hour) to prevent abuse
@@ -71,6 +72,20 @@ See [API.md](./API.md) for complete API documentation including:
 ![Profile Views](https://your-worker.workers.dev/badge/yourusername?style=flat-square&color=blue)
 ```
 
+### 1.1 Website Badge in README
+
+```markdown
+![Website Hits](https://your-worker.workers.dev/badge/website/example.com)
+![Website Hits](https://your-worker.workers.dev/badge/website/example.com?style=for-the-badge&color=green)
+```
+
+### 1.2 Repository Badge in README
+
+```markdown
+![Repo Hits](https://your-worker.workers.dev/badge/repo/aburaihan-dev/jenkins-in-docker)
+![Repo Hits](https://your-worker.workers.dev/badge/repo/aburaihan-dev/jenkins-in-docker?style=flat-square&color=blue)
+```
+
 ### 2. Get Profile Count (JSON)
 
 ```bash
@@ -90,6 +105,13 @@ curl https://your-worker.workers.dev/website/example.com
 ```bash
 curl https://your-worker.workers.dev/stats/octocat
 # {"count": 42, "profile": "octocat", "incremented": false}
+```
+
+### 5. Repository Hits
+
+```bash
+curl https://your-worker.workers.dev/repo/octocat/hello-world
+# {"count": 7, "owner": "octocat", "repo": "hello-world", "repository": "octocat/hello-world"}
 ```
 
 ## Badge Styles
@@ -115,6 +137,11 @@ curl https://your-worker.workers.dev/stats/octocat
 /badge/username?style=flat-square                  # Flat-square style
 /badge/username?style=flat-square&color=blue       # Blue flat-square
 /badge/username?style=for-the-badge&color=orange   # Large orange badge
+/badge/website/example.com                         # Website hits badge
+/badge/website/example.com?style=for-the-badge&color=green  # Website hits badge (styled)
+/badge/repo/octocat/hello-world                    # Repository hits badge
+/badge/repo/aburaihan-dev/jenkins-in-docker        # Repository hits badge for jenkins-in-docker
+/badge/repo/aburaihan-dev/jenkins-in-docker?style=flat-square&color=blue  # Styled repo badge
 ```
 
 ## Endpoints Overview
@@ -122,10 +149,14 @@ curl https://your-worker.workers.dev/stats/octocat
 | Endpoint | Method | Increments | Rate Limit | Purpose |
 |----------|--------|------------|------------|---------|
 | `/badge/:profile` | GET | ✅ Yes | 300/hour | SVG badge with count |
+| `/badge/website/:domain` | GET | ✅ Yes | 300/hour | SVG website hits badge |
+| `/badge/repo/:owner/:repo` | GET | ✅ Yes | 300/hour | SVG repository hits badge |
 | `/count/:profile` | GET | ✅ Yes | 30/hour | JSON profile count |
 | `/website/:domain` | GET | ✅ Yes | 30/hour | JSON website count |
+| `/repo/:owner/:repo` | GET | ✅ Yes | 30/hour | JSON repository hits |
 | `/stats/:profile` | GET | ❌ No | 1000/hour | Read-only profile stats |
 | `/stats/website/:domain` | GET | ❌ No | 1000/hour | Read-only website stats |
+| `/stats/repo/:owner/:repo` | GET | ❌ No | 1000/hour | Read-only repository stats |
 
 ## Architecture
 
@@ -140,6 +171,7 @@ curl https://your-worker.workers.dev/stats/octocat
 Cloudflare Workers KV stores:
 - Profile views: `profile:{username}`
 - Website views: `website:{domain}`
+- Repository hits: `repo:{owner}/{repo}`
 - Rate limits: `ratelimit:{ip}:{endpoint}:{hour}` (auto-expires)
 
 ### Rate Limiting

@@ -110,6 +110,22 @@ echo "..."
 echo ""
 echo ""
 
+# Test 14: Website badge endpoint
+echo -e "${YELLOW}Test 14: Website Badge Endpoint${NC}"
+echo "GET $BASE_URL/badge/website/example.com"
+curl -s "$BASE_URL/badge/website/example.com" | head -c 200
+echo "..."
+echo ""
+echo ""
+
+# Test 15: Repository badge endpoint
+echo -e "${YELLOW}Test 15: Repository Badge Endpoint${NC}"
+echo "GET $BASE_URL/badge/repo/octocat/hello-world"
+curl -s "$BASE_URL/badge/repo/octocat/hello-world" | head -c 200
+echo "..."
+echo ""
+echo ""
+
 echo -e "${GREEN}=================================="
 echo "All Tests Completed!"
 echo "==================================${NC}"

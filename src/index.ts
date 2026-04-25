@@ -37,6 +37,28 @@ function validateDomain(domain: string): { valid: boolean; error?: string } {
   return { valid: true }
 }
 
+function validateRepositoryIdentifier(owner: string, repo: string): { valid: boolean; error?: string } {
+  const ownerValidation = validateProfileName(owner)
+  if (!ownerValidation.valid) {
+    return { valid: false, error: `Invalid owner name: ${ownerValidation.error}` }
+  }
+
+  if (!repo || repo.length === 0) {
+    return { valid: false, error: 'Repository name is required' }
+  }
+  if (repo.length > 100) {
+    return { valid: false, error: 'Repository name must be 100 characters or less' }
+  }
+
+  // GitHub repository names can include alphanumeric, hyphen, underscore and dot.
+  const validPattern = /^[a-zA-Z0-9._-]+$/
+  if (!validPattern.test(repo)) {
+    return { valid: false, error: 'Repository name must contain only alphanumeric characters, hyphens, underscores, and dots' }
+  }
+
+  return { valid: true }
+}
+
 // ==================== RATE LIMITING MIDDLEWARE ====================
 
 async function checkRateLimit(
@@ -72,7 +94,7 @@ async function checkRateLimit(
 
 async function getCount(
   kv: KVNamespace,
-  type: 'profile' | 'website',
+  type: 'profile' | 'website' | 'repo',
   identifier: string
 ): Promise<{ count: number; error?: string }> {
   try {
@@ -88,7 +110,7 @@ async function getCount(
 
 async function incrementCount(
   kv: KVNamespace,
-  type: 'profile' | 'website',
+  type: 'profile' | 'website' | 'repo',
   identifier: string
 ): Promise<{ count: number; error?: string }> {
   try {
@@ -201,10 +223,14 @@ app.get('/', (c) => {
     version: '1.0.0',
     endpoints: {
       badge: '/badge/:profile - Get profile view counter as badge (auto-increment)',
+      badge_website: '/badge/website/:domain - Get website view counter as badge (auto-increment)',
+      badge_repository: '/badge/repo/:owner/:repo - Get repository hit counter as badge (auto-increment)',
       count: '/count/:profile - Get profile view counter as JSON (auto-increment)',
       website: '/website/:domain - Get website view counter as JSON (auto-increment)',
+      repository: '/repo/:owner/:repo - Get repository hit counter as JSON (auto-increment)',
       stats_profile: '/stats/:profile - Get profile view counter without incrementing',
       stats_website: '/stats/website/:domain - Get website view counter without incrementing',
+      stats_repository: '/stats/repo/:owner/:repo - Get repository hit counter without incrementing',
     },
     query_params: {
       badge: 'style=flat|flat-square|for-the-badge, color=brightgreen|green|blue|red|orange|yellow|grey',
@@ -260,6 +286,123 @@ app.get('/badge/:profile', async (c) => {
   
   const badge = generateBadgeSVG('profile views', String(result.count), style, color)
   
+  return c.body(badge, 200, {
+    'Content-Type': 'image/svg+xml',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    'X-Content-Type-Options': 'nosniff',
+  })
+})
+
+// Website badge endpoint with auto-increment
+app.get('/badge/website/:domain', async (c) => {
+  const domain = c.req.param('domain')
+  const style = c.req.query('style') || 'flat'
+  const color = c.req.query('color') || 'brightgreen'
+
+  // Validate domain name
+  const validation = validateDomain(domain)
+  if (!validation.valid) {
+    const errorBadge = generateBadgeSVG('website hits', 'invalid', style, 'red')
+    return c.body(errorBadge, 400, {
+      'Content-Type': 'image/svg+xml',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      'X-Content-Type-Options': 'nosniff',
+    })
+  }
+
+  // Check rate limit (300 requests/hour for badges)
+  const rateLimit = await checkRateLimit(c, 'badge-website', 300)
+  if (!rateLimit.allowed) {
+    const errorBadge = generateBadgeSVG('website hits', 'rate limited', style, 'orange')
+    return c.body(errorBadge, 429, {
+      'Content-Type': 'image/svg+xml',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      'X-Content-Type-Options': 'nosniff',
+    })
+  }
+
+  // Increment counter
+  const result = await incrementCount(c.env.PROFILE_VIEWS, 'website', domain)
+
+  if (result.error) {
+    const errorBadge = generateBadgeSVG('website hits', 'error', style, 'red')
+    return c.body(errorBadge, 500, {
+      'Content-Type': 'image/svg+xml',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      'X-Content-Type-Options': 'nosniff',
+    })
+  }
+
+  const badge = generateBadgeSVG('website hits', String(result.count), style, color)
+
+  return c.body(badge, 200, {
+    'Content-Type': 'image/svg+xml',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    'X-Content-Type-Options': 'nosniff',
+  })
+})
+
+// Repository badge endpoint with auto-increment
+app.get('/badge/repo/:owner/:repo', async (c) => {
+  const owner = c.req.param('owner')
+  const repo = c.req.param('repo')
+  const style = c.req.query('style') || 'flat'
+  const color = c.req.query('color') || 'brightgreen'
+
+  // Validate repository identifier
+  const validation = validateRepositoryIdentifier(owner, repo)
+  if (!validation.valid) {
+    const errorBadge = generateBadgeSVG('repo hits', 'invalid', style, 'red')
+    return c.body(errorBadge, 400, {
+      'Content-Type': 'image/svg+xml',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      'X-Content-Type-Options': 'nosniff',
+    })
+  }
+
+  // Check rate limit (300 requests/hour for badges)
+  const rateLimit = await checkRateLimit(c, 'badge-repo', 300)
+  if (!rateLimit.allowed) {
+    const errorBadge = generateBadgeSVG('repo hits', 'rate limited', style, 'orange')
+    return c.body(errorBadge, 429, {
+      'Content-Type': 'image/svg+xml',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      'X-Content-Type-Options': 'nosniff',
+    })
+  }
+
+  const repository = `${owner}/${repo}`
+
+  // Increment counter
+  const result = await incrementCount(c.env.PROFILE_VIEWS, 'repo', repository)
+
+  if (result.error) {
+    const errorBadge = generateBadgeSVG('repo hits', 'error', style, 'red')
+    return c.body(errorBadge, 500, {
+      'Content-Type': 'image/svg+xml',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      'X-Content-Type-Options': 'nosniff',
+    })
+  }
+
+  const badge = generateBadgeSVG('repo hits', String(result.count), style, color)
+
   return c.body(badge, 200, {
     'Content-Type': 'image/svg+xml',
     'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -355,6 +498,52 @@ app.get('/website/:domain', async (c) => {
   )
 })
 
+// Repository hits endpoint with auto-increment
+app.get('/repo/:owner/:repo', async (c) => {
+  const owner = c.req.param('owner')
+  const repo = c.req.param('repo')
+
+  // Validate repository identifier
+  const validation = validateRepositoryIdentifier(owner, repo)
+  if (!validation.valid) {
+    return c.json(
+      { error: 'Invalid repository identifier', message: validation.error, code: 'INVALID_INPUT' },
+      400
+    )
+  }
+
+  // Check rate limit (30 requests/hour for counter endpoints)
+  const rateLimit = await checkRateLimit(c, 'repo', 30)
+  if (!rateLimit.allowed) {
+    return c.json(
+      { error: 'Rate limit exceeded', message: rateLimit.error, code: 'RATE_LIMIT_EXCEEDED' },
+      429
+    )
+  }
+
+  const repository = `${owner}/${repo}`
+
+  // Increment counter
+  const result = await incrementCount(c.env.PROFILE_VIEWS, 'repo', repository)
+
+  if (result.error) {
+    return c.json(
+      { error: 'Internal server error', message: result.error, code: 'SERVER_ERROR' },
+      500
+    )
+  }
+
+  return c.json(
+    { count: result.count, owner, repo, repository },
+    200,
+    {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+    }
+  )
+})
+
 // Read-only stats endpoint for profiles
 app.get('/stats/:profile', async (c) => {
   const profile = c.req.param('profile')
@@ -430,6 +619,50 @@ app.get('/stats/website/:domain', async (c) => {
   
   return c.json(
     { count: result.count, domain, incremented: false },
+    200,
+    {
+      'Cache-Control': 'public, max-age=60',
+    }
+  )
+})
+
+// Read-only stats endpoint for repositories
+app.get('/stats/repo/:owner/:repo', async (c) => {
+  const owner = c.req.param('owner')
+  const repo = c.req.param('repo')
+
+  // Validate repository identifier
+  const validation = validateRepositoryIdentifier(owner, repo)
+  if (!validation.valid) {
+    return c.json(
+      { error: 'Invalid repository identifier', message: validation.error, code: 'INVALID_INPUT' },
+      400
+    )
+  }
+
+  // No strict rate limit for stats
+  const rateLimit = await checkRateLimit(c, 'stats', 1000)
+  if (!rateLimit.allowed) {
+    return c.json(
+      { error: 'Rate limit exceeded', message: rateLimit.error, code: 'RATE_LIMIT_EXCEEDED' },
+      429
+    )
+  }
+
+  const repository = `${owner}/${repo}`
+
+  // Get count without incrementing
+  const result = await getCount(c.env.PROFILE_VIEWS, 'repo', repository)
+
+  if (result.error) {
+    return c.json(
+      { error: 'Internal server error', message: result.error, code: 'SERVER_ERROR' },
+      500
+    )
+  }
+
+  return c.json(
+    { count: result.count, owner, repo, repository, incremented: false },
     200,
     {
       'Cache-Control': 'public, max-age=60',

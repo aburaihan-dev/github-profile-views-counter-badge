@@ -38,10 +38,14 @@ pnpm run cf-typegen       # Generate TypeScript types
 ```
 GET /                              # API documentation
 GET /badge/:profile                # SVG badge (auto-increment)
+GET /badge/website/:domain         # Website badge (auto-increment)
+GET /badge/repo/:owner/:repo       # Repository badge (auto-increment)
 GET /count/:profile                # JSON count (auto-increment)
 GET /website/:domain               # Website count (auto-increment)
+GET /repo/:owner/:repo             # Repository hits (auto-increment)
 GET /stats/:profile                # Profile stats (read-only)
 GET /stats/website/:domain         # Website stats (read-only)
+GET /stats/repo/:owner/:repo       # Repository stats (read-only)
 ```
 
 ## Rate Limits (per IP per hour)
@@ -62,6 +66,7 @@ GET /stats/website/:domain         # Website stats (read-only)
 ```
 profile:{username}           # Profile view counts
 website:{domain}             # Website view counts
+repo:{owner}/{repo}          # Repository hit counts
 ratelimit:{ip}:{endpoint}:{hour}  # Rate limiting (auto-expires)
 ```
 
